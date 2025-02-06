@@ -1,27 +1,60 @@
-import { app } from './app.js';
-import type { IncomingMessage, ServerResponse } from 'node:http';
+import { createServer } from 'node:http';
+import type { ServerResponse } from 'node:http';
 import 'dotenv/config';
 import createDebug from 'debug';
-import { HtmlError } from './error.js';
+import { HttpError } from './http-error.js';
 import { createHtmlString } from './template.js';
 
-const debug = createDebug('demo:server');
-const PORT = process.env.PORT || 3000;
-// create a loca server to receive data from
-const server = createServer(appRouter); // appRouter is the function that will handle the requests
-// listen to the server
-server.listen(PORT);
-server.on('listening', listenManager);
-server.on('error', (error: HtmlError, response: ServerResponse) => {
-    if ('status'! in error) {
-        error = { ...error, statusCode: 500, status: 'Internal Server Error' };
-    }
-    // console.error(error.message);
-    debug(error.message, error.statusCode, error.status);
+import { app } from './app.js';
 
-    const html = createHtmlString('Error', 'Error', error.message);
+const debug = createDebug('demo:server');
+debug('Iniciando servidor...');
+const PORT = process.env.PORT || 3000;
+
+const listenManager = () => {
+    const addr = server.address();
+    if (addr === null) return;
+    let bind: string;
+    if (typeof addr === 'string') {
+        bind = 'pipe ' + addr;
+    } else {
+        bind =
+            addr.address === '::'
+                ? `http://localhost:${addr?.port}`
+                : `${addr.address}:${addr?.port}`;
+    }
+    console.log(`Server listening on ${bind}`);
+    debug(`Servidor escuchando en ${bind}`);
+};
+
+const errorManager = (error: Error | HttpError, response: ServerResponse) => {
+    if (!('status' in error)) {
+        error = {
+            ...error,
+            statusCode: 500,
+            status: 'Internal Server Error',
+        };
+    }
+
+    const publicMessage = `Error: ${error.statusCode} ${error.status}`;
+    debug(publicMessage, error.message);
+
+    const html = createHtmlString(
+        'Error | Node Server',
+        'Error',
+        publicMessage,
+    );
     response.statusCode = error.statusCode;
     response.statusMessage = error.status;
     response.setHeader('Content-Type', 'text/html; charset=utf-8');
     response.end(html);
-});
+};
+
+// create a local server to receive data from
+const server = createServer(app);
+// app is the function that will handle the requests
+
+// listen to the server
+server.listen(PORT);
+server.on('listening', listenManager);
+server.on('error', errorManager);
